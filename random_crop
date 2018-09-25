@@ -1,0 +1,124 @@
+'''
+usage： random_crop('filename', number)
+随机裁剪，保证每张图里面含有目标
+input：
+'filename'： 需要随机裁剪的图片
+‘number’： 每张图需要裁剪的个数
+output：
+将裁剪的图片和相应的xml进行保存
+
+'''
+
+from PIL import Image
+import os
+import numpy as np
+import random
+import xml.etree.ElementTree as ET
+from xml.dom import getDOMImplementation
+
+def create_element_with_text(document, tagname, text):
+	# "创建一个元素节点，该节点只有一个文本子节点"
+	# 创建元素节点和文本节点
+	elementNode = document.createElement(tagname)
+	textNode = document.createTextNode(text)
+	# 将文本节点作为元素节点的子节点
+	elementNode.appendChild(textNode)
+	return elementNode
+
+
+def read_comp_xml(filename):
+	tree = ET.parse(filename)
+	root = tree.getroot()
+	w = []
+	h = []
+	for pt in root.iter(tag='Pt'):
+		w.append(float(pt.attrib['LeftTopX']))
+		h.append(float(pt.attrib['LeftTopY']))
+	length = len(w)
+	numofplane = int(length / 4)
+	w_np = np.array(w).reshape((numofplane, 4))
+	h_np = np.array(h).reshape((numofplane, 4))
+	w1 = w_np.min(1)
+	h1 = h_np.min(1)
+	w2 = w_np.max(1)
+	h2 = h_np.max(1)
+	return w1, h1, w2, h2, numofplane
+
+def random_crop(file_path,n):
+	image_path = os.path.join(file_path,"bmp")
+	xml_path = os.path.join(file_path,"xml")
+	images_name = os.listdir(image_path)
+	count = 0
+	for name in images_name:
+		path = os.path.join(image_path, name)
+		img = Image.open(path)
+		w,h = img.size
+		wo1, ho1, wo2, ho2, numofplane = read_comp_xml(os.path.join(xml_path,name).replace("bmp","xml"))
+		num=0
+		while num <n:
+			crop_num = 0
+			impl = getDOMImplementation()
+			doc = impl.createDocument(None, "annotation", None)
+			top_element = doc.documentElement
+			fileNode = create_element_with_text(doc, 'filename', "%06d"%count + '.png')
+
+			flag = True
+			w1 = random.randint(0,w-2)
+			h1 = random.randint(0,h-2)
+			w2 = random.randint(w1+1,w-1)
+			h2 = random.randint(h1+1,h-1)
+			if abs((w1-w2)/(h1-h2)) >2 or abs((h1-h2)/(w1-w2))>2:  # 长宽之比不大于2
+				continue
+			sizeNode = doc.createElement('size')
+			widthNode = create_element_with_text(doc, 'width', str(w2 - w1))
+			heightNode = create_element_with_text(doc, 'height', str(h2 - h1))
+			depthNode = create_element_with_text(doc, 'depth', '1')
+
+			sizeNode.appendChild(widthNode)
+			sizeNode.appendChild(heightNode)
+			sizeNode.appendChild(depthNode)
+			top_element.appendChild(fileNode)
+			top_element.appendChild(sizeNode)
+			for i in range(0,numofplane):
+				if w1>= wo1[i] or h1>=ho1[i]:
+					continue
+				if w2<=wo2[i] or h2<=ho2[i]:
+					continue
+				if flag:
+					crop_img = img.crop((w1, h1, w2, h2))
+					#draw = ImageDraw.Draw(crop_img)
+					flag = False
+
+				crop_num+=1
+				w_1=wo1[i]-w1
+				w_2=wo2[i]-w1
+				h_1=ho1[i]-h1
+				h_2=ho2[i]-h1
+				#draw.rectangle(((w_1, h_1), (w_2, h_2)), outline="white")
+				objectNode = doc.createElement('object')
+				nameNode = create_element_with_text(doc, 'name', 'plane')
+				objectNode.appendChild(nameNode)
+				bnbboxNode = doc.createElement('bndbox')
+				xminNode = create_element_with_text(doc, 'xmin', str(int(w_1)))
+				yminNode = create_element_with_text(doc, 'ymin', str(int(h_1)))
+				xmaxNode = create_element_with_text(doc, 'xmax', str(int(w_2)))
+				ymaxNode = create_element_with_text(doc, 'ymax', str(int(h_2)))
+				bnbboxNode.appendChild(xminNode)
+				bnbboxNode.appendChild(yminNode)
+				bnbboxNode.appendChild(xmaxNode)
+				bnbboxNode.appendChild(ymaxNode)
+
+				objectNode.appendChild(nameNode)
+				objectNode.appendChild(bnbboxNode)
+				top_element.appendChild(objectNode)
+
+			if crop_num>0 :
+				xml_file = open(os.path.join("E:\\plane\\result","xml","%06d"%count+'p.xml'), 'w', encoding='utf-8')
+				doc.toprettyxml()
+				doc.writexml(xml_file, addindent=' ' * 4, newl='\n', encoding='utf-8')  # 写入xml文件
+				crop_img.save(os.path.join("E:\\plane\\result", "image", "%06d" % count + 'p.png'))  # 写入裁剪文件
+				#crop_img.save('1.bmp')
+				print(os.path.join("E:\\plane\\result","image","%06d"%count+'.png'))
+				count += 1
+				num+=1
+
