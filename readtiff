@@ -1,0 +1,24 @@
+#!/usr/bin/env python
+# _*_ coding:utf-8 _*_
+
+'''
+16bit tiff 转换为 8bit tiff
+大于均值+3*标准差的等于均值+3*标准差，然后再做线性拉伸
+input：  filename tiff文件名
+output： im8 为8bit输出
+'''
+
+import numpy as np
+import cv2
+
+def readtiff(filename):
+	im16 = cv2.imread(filename, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+	im8 = np.array(im16, dtype=np.float64)
+	minp = np.min(im8)
+	mean = np.mean(im8)
+	std = np.std(im8)
+	tho = mean + 3*std
+	im8[im8 >= tho] = tho
+	im8 = 255*(im8 - minp)/(tho - minp)
+	im8 = np.array(im8, dtype=np.uint8)
+	return im8
